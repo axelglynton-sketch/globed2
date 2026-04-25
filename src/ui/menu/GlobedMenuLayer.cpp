@@ -31,6 +31,8 @@
 #include <ui/misc/Badges.hpp>
 #include <ui/misc/CellGradients.hpp>
 #include <ui/Core.hpp>
+#include <globed/audio/sound/Sound.hpp>
+#include <vector>
 
 #include <argon/argon.hpp>
 #include <cue/RepeatingBackground.hpp>
@@ -41,6 +43,42 @@ using namespace geode::prelude;
 using namespace asp::time;
 
 namespace globed {
+
+namespace {
+
+static std::vector<float> makeHehehehePcm() {
+    constexpr int sampleRate = VOICE_TARGET_SAMPLERATE;
+    constexpr float duration = 0.9f;
+    constexpr int samples = static_cast<int>(sampleRate * duration);
+    std::vector<float> pcm;
+    pcm.reserve(samples);
+
+    constexpr float PI = 3.14159265358979323846f;
+    auto envelope = [&](float t) {
+        return std::sin(t * PI);
+    };
+
+    for (int i = 0; i < samples; ++i) {
+        float t = static_cast<float>(i) / sampleRate;
+        float syllableStart = std::floor(t / 0.12f) * 0.12f;
+        float syllableTime = t - syllableStart;
+        float syllable = 0.f;
+
+        if (syllableTime < 0.08f) {
+            float env = envelope(syllableTime / 0.08f);
+            float pitch = 520.f + 38.f * std::sin(6.28f * syllableStart);
+            syllable = std::sin(2.f * M_PI * pitch * t) * env;
+        }
+
+        // add a small wobble to make it sound like "hehehehe"
+        float wobble = std::sin(2.f * M_PI * 8.f * t) * 0.08f;
+        pcm.push_back(std::clamp(syllable + wobble, -1.f, 1.f) * 0.22f);
+    }
+
+    return pcm;
+}
+
+} // namespace
 
 namespace { namespace $unity {
 
@@ -270,6 +308,30 @@ bool GlobedMenuLayer::init() {
         .parent(versionContainer);
 
     versionContainer->updateLayout();
+
+    // secret hover target for the April prank
+    m_secretEggLabel = Build<Label>::create("...", "chatFont.fnt")
+        .anchorPoint({1.f, 1.f})
+        .pos(winSize - CCSize{10.f, 18.f})
+        .opacity(200)
+        .scale(0.55f)
+        .parent(this)
+        .collect();
+
+    auto secretMenu = CCMenu::create();
+    secretMenu->setPosition({0.f, 0.f});
+    secretMenu->setTouchPriority(1000);
+    this->addChild(secretMenu, 112);
+
+    Build<CCSprite>::createSpriteName("GJ_button_01_001.png")
+        .opacity(0)
+        .scale(0.7f)
+        .intoMenuItem([this] {
+            this->playSecretEggSound();
+        })
+        .pos(winSize - CCSize{10.f, 18.f})
+        .parent(secretMenu)
+        .collect();
 
     // create the connection menu
     auto connectMenuLayout = ColumnLayout::create()->setAutoScale(false)->setAxisReverse(true)->setGap(10.f);
@@ -1314,6 +1376,13 @@ void GlobedMenuLayer::update(float dt) {
 
     this->setMenuState(newState);
 
+    if (m_secretEggReset > 0.f) {
+        m_secretEggReset -= dt;
+        if (m_secretEggReset <= 0.f && m_secretEggLabel) {
+            m_secretEggLabel->setString("...");
+        }
+    }
+
     bool connected = newState == MenuState::Connected;
     this->updatePreferredServerLabel(connected);
 
@@ -1331,6 +1400,23 @@ void GlobedMenuLayer::update(float dt) {
         } else if (this->shouldAutoRefresh(dt)) {
             this->requestRoomState();
         }
+    }
+}
+
+void GlobedMenuLayer::playSecretEggSound() {
+    auto pcm = makeHehehehePcm();
+    auto sound = Sound::create(pcm.data(), pcm.size(), VOICE_TARGET_SAMPLERATE, 1, true);
+    if (!sound) {
+        return;
+    }
+
+    auto s = std::move(sound).unwrap();
+    s->rawSetVolume(0.38f);
+    s->setPaused(false);
+
+    if (m_secretEggLabel) {
+        m_secretEggLabel->setString("hehehehe");
+        m_secretEggReset = 0.8f;
     }
 }
 

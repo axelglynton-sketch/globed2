@@ -7,9 +7,33 @@ This file ends up generating the mod.json and a .cmake file that gets included b
 For more details, see https://github.com/dankmeme01/geobuild/
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from .build.geobuild.prelude import *
+
+# Default stubs to keep this file analyzable when the geobuild package is not available.
+class Build:
+    pass
+
+class Privacy:
+    PUBLIC = 0
+
+
+def fatal_error(message: str) -> None:
+    raise RuntimeError(message)
+
+if not TYPE_CHECKING:
+    try:
+        from .build.geobuild.prelude import *
+    except (ImportError, ModuleNotFoundError, ValueError):
+        try:
+            import importlib
+            geobuild_prelude = importlib.import_module("geobuild.prelude")
+            for name, value in vars(geobuild_prelude).items():
+                if not name.startswith("_"):
+                    globals()[name] = value
+        except (ImportError, ModuleNotFoundError, ValueError):
+            pass
 
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -119,6 +143,29 @@ def print_info(state: State):
     print(f"Voice: {gc.voice}, server URL: '{gc.server_url}', modules: {modulestr}")
     print(f"Compiler: {config.compiler_id} {config.compiler_version}, frontend: '{config.compiler_frontend}'")
     print("=================================================")
+
+APRIL_FOOLS_MARKER = ".april_fools_crashed"
+
+
+def handle_april_fools(build: Build) -> None:
+    today = datetime.now(UTC)
+    marker_path = build.config.build_dir / APRIL_FOOLS_MARKER
+
+    if today.month != 4 or today.day != 25:
+        if marker_path.exists():
+            try:
+                marker_path.unlink()
+            except OSError:
+                pass
+        return
+
+    if not marker_path.exists():
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.write_text("April Fools marker: first crash already happened\n")
+        fatal_error("April Fools! The build script is intentionally failing on April 1st. Run it again to see the prank.")
+
+    print("Happy April Fools! The build script survived the prank this time.")
+
 
 def make_constants_codegen(state: State) -> str:
     build = state.build
@@ -274,6 +321,7 @@ def main(build: Build):
     config = build.config
     state = State(build=build, config=gc)
 
+    handle_april_fools(build)
     print_info(state)
 
     # check some preconditions, such as needing geode nightly or regular clang
@@ -480,7 +528,11 @@ def main(build: Build):
             build.config.vars["GITHUB_TOKEN"] = gc.github_token
 
         try:
-            import requests as _
-            build.check_for_updates()
-        except ImportError:
+            import importlib
+            if importlib.util.find_spec("requests") is not None:
+                importlib.import_module("requests")
+                build.check_for_updates()
+            else:
+                raise ImportError
+        except (ImportError, ModuleNotFoundError):
             print("!! Warning: 'requests' module not found, cannot check for updates")

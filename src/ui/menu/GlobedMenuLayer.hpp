@@ -50,6 +50,10 @@ private:
     CCMenu* m_farRightMenu = nullptr;
     CCMenuItemSpriteExtra* m_searchBtn = nullptr;
     CCMenuItemSpriteExtra* m_clearSearchBtn = nullptr;
+    CCMenuItemSpriteExtra* m_secretEggButton = nullptr;
+    CCLabelBMFont* m_secretEggLabel = nullptr;
+    float m_secretEggReset = 0.f;
+
     MessageListener<msg::RoomStateMessage> m_roomStateListener;
     MessageListener<msg::RoomPlayersMessage> m_roomPlayersListener;
     MessageListener<msg::PinnedLevelUpdatedMessage> m_pinnedListener;
@@ -96,6 +100,7 @@ private:
     void addPinnedLevelCell();
     void removePinnedLevelCell();
 
+    void playSecretEggSound();
     void onSettings();
 };
 
