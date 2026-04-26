@@ -4,14 +4,95 @@
 #include <core/CoreImpl.hpp>
 #include <core/preload/PreloadManager.hpp>
 #include <core/patches.hpp>
+#include <algorithm>
 
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/modify/CurrencyRewardLayer.hpp>
+#include <modules/ui/popups/EmoteListPopup.hpp>
 
 using namespace geode::prelude;
 
 namespace globed {
+
+class FloatingEmoteButton : public cocos2d::CCLayer {
+public:
+    static FloatingEmoteButton* create() {
+        auto ret = new FloatingEmoteButton;
+        if (ret && ret->init()) {
+            ret->autorelease();
+            return ret;
+        }
+
+        delete ret;
+        return nullptr;
+    }
+
+    bool init() override {
+        if (!CCLayer::init()) return false;
+
+        this->setTouchEnabled(true);
+        this->setTouchMode(cocos2d::kCCTouchesOneByOne);
+        this->ignoreAnchorPointForPosition(false);
+        this->setAnchorPoint({0.5f, 0.5f});
+
+        auto icon = Build<CCSprite>::create("icon-emotes.png"_spr)
+            .scale(0.85f)
+            .parent(this)
+            .collect();
+
+        auto size = icon->getScaledContentSize();
+        this->setContentSize(size);
+        icon->setPosition(size.width / 2.f, size.height / 2.f);
+
+        return true;
+    }
+
+    bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent*) override {
+        auto pos = this->convertTouchToNodeSpace(touch);
+        if (CCRect{{0, 0}, this->getContentSize()}.containsPoint(pos)) {
+            m_touch = touch;
+            m_dragging = false;
+            return true;
+        }
+        return false;
+    }
+
+    void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent*) override {
+        if (touch != m_touch) return;
+        auto parent = this->getParent();
+        if (!parent) return;
+
+        auto pos = parent->convertTouchToNodeSpace(touch);
+        auto size = this->getContentSize();
+        auto parentSize = parent->getContentSize();
+
+        pos.x = std::clamp(pos.x, size.width / 2.f, parentSize.width - size.width / 2.f);
+        pos.y = std::clamp(pos.y, size.height / 2.f, parentSize.height - size.height / 2.f);
+
+        this->setPosition(pos);
+        m_dragging = true;
+    }
+
+    void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent*) override {
+        if (touch != m_touch) return;
+        if (!m_dragging) {
+            auto popup = EmoteListPopup::create();
+            if (popup) {
+                popup->show();
+            }
+        }
+        m_touch = nullptr;
+    }
+
+    void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override {
+        this->ccTouchEnded(touch, event);
+    }
+
+private:
+    cocos2d::CCTouch* m_touch = nullptr;
+    bool m_dragging = false;
+};
 
 struct GLOBED_MODIFY_ATTR HookedPlayLayer : geode::Modify<HookedPlayLayer, PlayLayer> {
     struct Fields {
@@ -84,6 +165,15 @@ struct GLOBED_MODIFY_ATTR HookedPlayLayer : geode::Modify<HookedPlayLayer, PlayL
         }
 
         m_fields->m_setupWasCompleted = true;
+
+        if (m_level->isPlatformer()) {
+            auto button = FloatingEmoteButton::create();
+            if (button) {
+                auto winSize = CCDirector::get()->getWinSize();
+                button->setPosition({winSize.width - button->getContentSize().width, button->getContentSize().height * 2.f});
+                this->addChild(button, 1000);
+            }
+        }
 
         // progress bar indicators
         auto gjbgl = GlobedGJBGL::get(this);

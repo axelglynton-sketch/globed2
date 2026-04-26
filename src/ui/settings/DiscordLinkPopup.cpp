@@ -1,5 +1,3 @@
-// the code of this popup is so shit but i feel it's too unimportant to rewrite rn
-
 #include "DiscordLinkPopup.hpp"
 #include "DiscordLinkAttemptPopup.hpp"
 #include <globed/util/gd.hpp>
@@ -144,40 +142,81 @@ bool DiscordLinkPopup::init() {
     });
 
     this->requestState(0.f);
-    // this->onStateLoaded(612930885230002208, "dank_meme01", "https://cdn.discordapp.com/avatars/612930885230002208/57793059bc19ed4cc2c36ae1c321b423.png?size=1024");
 
     return true;
 }
 
 void DiscordLinkPopup::onClose(CCObject*) {
+    this->unschedule(schedule_selector(DiscordLinkPopup::requestState));
     Popup::onClose(nullptr);
     NetworkManagerImpl::get().sendSetDiscordPairingState(false);
+}
+
+void DiscordLinkPopup::setStatusText(std::string_view text, const ccColor3B& color) {
+    if (m_statusLabel) {
+        m_statusLabel->setString(text.data());
+        m_statusLabel->setColor(color);
+        if (m_statusContainer) {
+            m_statusContainer->updateLayout();
+        }
+    }
+}
+
+void DiscordLinkPopup::setWaitingText(std::string_view line1, std::string_view line2) {
+    if (!m_waitingLabel1 || !m_waitingLabel2) {
+        return;
+    }
+    m_waitingLabel1->setString(line1.data());
+    m_waitingLabel2->setString(line2.data());
+    m_waitingLabel2->limitLabelWidth(m_size.width * 0.8f, 0.4f, 0.1f);
+    if (m_waitingContainer) {
+        m_waitingContainer->updateLayout();
+    }
+}
+
+void DiscordLinkPopup::resetActiveButton() {
+    cue::resetNode(m_activeBtn);
+    m_activeBtn = nullptr;
+}
+
+void DiscordLinkPopup::resetWaitingState() {
+    cue::resetNode(m_waitingContainer);
+    m_waitingContainer = nullptr;
+    m_waitingLabel1 = nullptr;
+    m_waitingLabel2 = nullptr;
+    m_activelyWaiting = false;
+}
+
+void DiscordLinkPopup::createStartLinkButton() {
+    if (!m_buttonMenu) return;
+
+    resetActiveButton();
+    resetWaitingState();
+
+    m_activeBtn = Build<ButtonSprite>::create("Start", "bigFont.fnt", "GJ_button_01.png", 0.8f)
+        .scale(0.95f)
+        .intoMenuItem([this](auto btn) {
+            NetworkManagerImpl::get().sendRequestDiscordOauth();
+            btn->removeFromParent();
+            this->addLinkingText();
+        })
+        .scaleMult(1.1f)
+        .pos(this->fromBottom(26.f))
+        .parent(m_buttonMenu);
 }
 
 void DiscordLinkPopup::onStateLoaded(uint64_t id, const std::string& username, const std::string& avatarUrl) {
     m_linked = id != 0;
 
     if (id == 0) {
-        if (m_activelyWaiting) return;
+        if (m_activelyWaiting) {
+            return;
+        }
 
-        m_statusLabel->setString("Unlinked");
-        m_statusLabel->setColor(ccColor3B{ 255, 64, 64 });
-        m_statusContainer->updateLayout();
-
-        cue::resetNode(m_activeBtn);
-        cue::resetNode(m_waitingContainer);
-
-        m_activeBtn = Build<ButtonSprite>::create("Start", "bigFont.fnt", "GJ_button_01.png", 0.8f)
-            .scale(0.95f)
-            .intoMenuItem([this](auto btn) {
-                NetworkManagerImpl::get().sendRequestDiscordOauth();
-                btn->removeFromParent();
-                this->addLinkingText();
-            })
-            .scaleMult(1.1f)
-            .pos(this->fromBottom(26.f))
-            .parent(m_buttonMenu);
-
+        setStatusText("Unlinked", ccColor3B{255, 64, 64});
+        resetActiveButton();
+        resetWaitingState();
+        createStartLinkButton();
         return;
     }
 
@@ -186,28 +225,21 @@ void DiscordLinkPopup::onStateLoaded(uint64_t id, const std::string& username, c
 
     if (!username.empty()) {
         m_nameLabel->setString(username.c_str());
-        m_statusLabel->setString("Linked");
-        m_statusLabel->setColor(ccColor3B{ 69, 255, 23 });
+        setStatusText("Linked", ccColor3B{69, 255, 23});
     } else {
-        // linked, but the server for some reason cannot obtain username & avatar
-        m_statusLabel->setString("Linked (?)");
-        m_statusLabel->setColor(ccColor3B{ 211, 255, 51 });
+        setStatusText("Linked (?)", ccColor3B{211, 255, 51});
     }
 
-    m_statusContainer->updateLayout();
     m_nameLabel->limitLabelWidth(m_size.width * 0.85f, 0.6f, 0.1f);
 
     cue::resetNode(m_idLabel);
     cue::resetNode(m_background);
-    cue::resetNode(m_waitingContainer);
-    m_waitingLabel1 = nullptr;
-    m_waitingLabel2 = nullptr;
+    resetWaitingState();
     cue::resetNode(m_avatar);
-    cue::resetNode(m_activeBtn);
+    resetActiveButton();
 
     m_dataContainer->updateLayout();
 
-    // only replace the avatar if we actually got a link
     if (!avatarUrl.empty()) {
         m_playerIcon->setVisible(false);
         m_avatar = Build(LazySprite::create(ICON_SIZE))
@@ -215,21 +247,19 @@ void DiscordLinkPopup::onStateLoaded(uint64_t id, const std::string& username, c
         m_avatar->setAutoResize(true);
         m_avatar->loadFromUrl(convertAvatarUrl(avatarUrl));
         m_avatar->setLoadCallback([this](Result<> res) {
-            if (res.isOk()) {
-                // nothing
-            } else {
-                // show player icon
+            if (!res.isOk()) {
                 m_playerIcon->setVisible(true);
                 cue::resetNode(m_avatar);
             }
         });
+    } else {
+        m_playerIcon->setVisible(true);
     }
 
     m_playerCard->updateLayout();
 
     m_background = cue::attachBackground(m_playerCard);
 
-    // unlink button
     m_activeBtn = Build<ButtonSprite>::create("Unlink", "bigFont.fnt", "GJ_button_01.png", 0.8f)
         .scale(0.9f)
         .intoMenuItem([this](auto btn) {
@@ -250,6 +280,8 @@ void DiscordLinkPopup::onStateLoaded(uint64_t id, const std::string& username, c
 }
 
 void DiscordLinkPopup::addLinkingText() {
+    resetWaitingState();
+
     m_waitingContainer = Build(ColumnContainer::create(6.f))
         .pos(this->fromCenter(0.f, -26.f))
         .id("waiting-container")
@@ -286,11 +318,9 @@ void DiscordLinkPopup::onOauthUrlReceived(ZStringView url) {
 
     if (!m_waitingLabel1 || !m_waitingLabel2) return;
 
-    m_waitingLabel1->setString("Open your browser!");
-    m_waitingLabel2->setString("Waiting for confirmation...");
-    m_waitingLabel2->limitLabelWidth(m_size.width * 0.8f, 0.4f, 0.1f);
+    setWaitingText("Open your browser!", "Waiting for confirmation...");
+    resetActiveButton();
 
-    cue::resetNode(m_activeBtn);
     m_activeBtn = Build<ButtonSprite>::create("Copy Link", "bigFont.fnt", "GJ_button_01.png", 0.7f)
         .scale(0.8f)
         .intoMenuItem([url = std::string{url}](auto btn) {
@@ -303,12 +333,22 @@ void DiscordLinkPopup::onOauthUrlReceived(ZStringView url) {
 }
 
 void DiscordLinkPopup::startWaitingForRefresh() {
+    if (m_activelyWaiting) {
+        return;
+    }
+
     m_activelyWaiting = true;
     this->schedule(schedule_selector(DiscordLinkPopup::requestState), 1.0f);
 }
 
 void DiscordLinkPopup::startWaitingForUnlink() {
+    if (m_activelyWaiting) {
+        return;
+    }
+
     m_activelyWaiting = true;
+    resetActiveButton();
+    resetWaitingState();
 
     auto circle = Build(cue::LoadingCircle::create())
         .scale(0.6f)

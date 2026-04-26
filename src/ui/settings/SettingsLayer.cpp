@@ -180,6 +180,9 @@ void SettingsLayer::addSettings() {
     this->addSetting<BoolSettingCell>("core.autoconnect", "Autoconnect",
         "Automatically connect to <cj>Globed</c> when launching the game, if you were connected the last time."
     );
+    this->addSetting<BoolSettingCell>("core.level.offline-mode", "Offline Mode",
+        "Disable Internet features and play local or downloaded levels without needing a server connection."
+    );
     this->addSetting(ButtonSettingCell::create(
         "Discord Linking",
         "Link your <cb>Discord</c> account to receive <cg>roles</c> (for example <ca>Supporter</c>, <cp>Booster</c>, <cg>Moderator</c>, etc.) and unlock <cy>voice chat</c>.",

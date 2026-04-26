@@ -1,3 +1,10 @@
+## v2.1.5
+
+* Fix some bugs
+* Fix crashes for no reason
+* Fix errors in the code
+* Add no internet mode
+
 ## v2.1.4
 
 * Fix tiny player textures when using High Graphics on Mobile mod (and other mods that may use absolute paths for icons)

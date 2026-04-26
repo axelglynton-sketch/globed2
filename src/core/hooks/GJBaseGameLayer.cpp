@@ -84,6 +84,10 @@ void GlobedGJBGL::setupPreInit(GJGameLevel* level, bool editor) {
 
     g_settings.reload();
 
+    if (globed::setting<bool>("core.level.offline-mode") && nm.isConnected()) {
+        nm.disconnectCentral();
+    }
+
     // determine if mulitplayer should be active
 
     auto ecId = RoomManager::get().getEditorCollabId(level);

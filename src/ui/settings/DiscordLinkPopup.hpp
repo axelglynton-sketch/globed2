@@ -44,6 +44,11 @@ protected:
     void onOauthUrlReceived(geode::ZStringView url);
 
     void addLinkingText();
+    void setStatusText(std::string_view text, const ccColor3B& color);
+    void setWaitingText(std::string_view line1, std::string_view line2);
+    void resetWaitingState();
+    void resetActiveButton();
+    void createStartLinkButton();
 
     void startWaitingForRefresh();
     void startWaitingForUnlink();
