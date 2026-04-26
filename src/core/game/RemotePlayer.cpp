@@ -61,15 +61,16 @@ RemotePlayer::RemotePlayer(int playerId, GJBaseGameLayer* gameLayer, CCNode* par
 
         } else if (!plat && globed::setting<bool>("core.level.progress-indicators")) {
             auto gjbgl = GlobedGJBGL::get(gameLayer);
+            if (gjbgl->m_fields->m_progressBarContainer) {
+                m_progIcon = Build<ProgressIcon>::create()
+                    .zOrder(2)
+                    .id(fmt::format("remote-player-progress-{}"_spr, playerId))
+                    .parent(gjbgl->m_fields->m_progressBarContainer);
 
-            m_progIcon = Build<ProgressIcon>::create()
-                .zOrder(2)
-                .id(fmt::format("remote-player-progress-{}"_spr, playerId))
-                .parent(gjbgl->m_fields->m_progressBarContainer);
-
-            if (playerId == 0) {
-                m_progIcon->updateIcons(globed::getPlayerIcons());
-                m_progIcon->setForceOnTop(true);
+                if (playerId == 0) {
+                    m_progIcon->updateIcons(globed::getPlayerIcons());
+                    m_progIcon->setForceOnTop(true);
+                }
             }
         }
     }

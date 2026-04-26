@@ -10,6 +10,12 @@ For more details, see https://github.com/dankmeme01/geobuild/
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from pathlib import Path
+from dataclasses import dataclass, field
+from datetime import datetime, UTC
+import json
+import tomllib
+import sys
 
 # Default stubs to keep this file analyzable when the geobuild package is not available.
 class Build:
@@ -21,6 +27,78 @@ class Privacy:
 
 def fatal_error(message: str) -> None:
     raise RuntimeError(message)
+
+
+def smart_write_text(path: Path, content: str) -> None:
+    existing = None
+    if path.exists():
+        try:
+            existing = path.read_text()
+        except OSError:
+            existing = None
+
+    if existing == content:
+        return
+
+    path.write_text(content)
+
+
+def utf32_to_c(s: str) -> str:
+    return ''.join(f"\\U{int(p, 16):08x}" for p in s.split('-'))
+
+
+def utf32_to_utf8_c(s: str) -> str:
+    chars = ''.join(chr(int(cp, 16)) for cp in s.split('-'))
+    utf8_bytes = chars.encode('utf-8')
+    return ''.join(f'\\x{b:02x}' for b in utf8_bytes)
+
+
+def replace_section(source: str, start_marker: str, end_marker: str, new_content: str) -> str:
+    start_index = source.index(start_marker) + len(start_marker)
+    end_index = source.index(end_marker, start_index)
+    return source[:start_index] + "\n" + new_content + source[end_index:]
+
+
+def update_emoji_codegen(project_dir: Path) -> None:
+    emoji_dir = project_dir / "resources" / "emoji"
+    data_path = emoji_dir / "emoji-data"
+    source_path = project_dir / "src" / "ui" / "Emojis.cpp"
+
+    if not emoji_dir.exists() or not data_path.exists() or not source_path.exists():
+        return
+
+    with data_path.open("r", encoding="utf-8") as fp:
+        data = json.load(fp)
+
+    names: dict[str, list[str]] = {}
+    for item in data.get("emojis", []):
+        decoded = item.get("surrogates", "")
+        if not isinstance(decoded, str):
+            continue
+
+        codepoints = "-".join(f"{ord(c):x}" for c in decoded)
+        codepoints = codepoints.replace("-fe0f", "")
+        names[codepoints] = [name for name in item.get("names", []) if isinstance(name, str)]
+
+    names["1fae9"] = ["face_with_bags_under_eyes", "exhausted_face", "exhausted"]
+
+    paths = sorted(emoji_dir.glob("*.png"), key=lambda p: p.name)
+    first_str = ""
+    second_str = ""
+
+    for file in paths:
+        cp = file.stem
+        first_str += f'        U"{utf32_to_c(cp)}"_emoji,\n'
+        if cp in names:
+            for alt in names[cp]:
+                second_str += f'        {{ "{alt}", u8"{utf32_to_utf8_c(cp)}", }},\n'
+        else:
+            print(f"WARN: Missing names for emoji: {cp}")
+
+    source = source_path.read_text(encoding="utf-8")
+    source = replace_section(source, "// ## BEGIN CODEGEN 1", "// ## END CODEGEN", first_str)
+    source = replace_section(source, "// ## BEGIN CODEGEN 2", "// ## END CODEGEN", second_str)
+    smart_write_text(source_path, source)
 
 if not TYPE_CHECKING:
     try:
@@ -34,12 +112,6 @@ if not TYPE_CHECKING:
                     globals()[name] = value
         except (ImportError, ModuleNotFoundError, ValueError):
             pass
-
-from pathlib import Path
-from dataclasses import dataclass, field
-from datetime import datetime, UTC
-import tomllib
-import sys
 
 # minimum required geode, can be a commit or a tag
 REQUIRED_GEODE_VERSION = "v5.6.1"
@@ -151,7 +223,7 @@ def handle_april_fools(build: Build) -> None:
     today = datetime.now(UTC)
     marker_path = build.config.build_dir / APRIL_FOOLS_MARKER
 
-    if today.month != 4 or today.day != 25:
+    if today.month != 4 or today.day != 1:
         if marker_path.exists():
             try:
                 marker_path.unlink()
@@ -355,7 +427,16 @@ def main(build: Build):
 
     # Add codegenned source file
     codegen_path = config.build_dir / "globed-constants-codegen.cpp"
-    codegen_path.write_text(make_constants_codegen(state))
+    smart_write_text(codegen_path, make_constants_codegen(state))
+
+    # regenerate emoji source when the resource set changes
+    build.reconfigure_if_changed(config.project_dir / "resources" / "emoji" / "emoji-data")
+    for emoji_png in sorted((config.project_dir / "resources" / "emoji").glob("*.png")):
+        build.reconfigure_if_changed(emoji_png)
+    for sfx_file in sorted((config.project_dir / "resources" / "emotes_sfx").glob("*.ogg")):
+        build.reconfigure_if_changed(sfx_file)
+    update_emoji_codegen(config.project_dir)
+
     build.add_source_file(codegen_path)
 
     # Add precompiled headers
@@ -410,6 +491,16 @@ def main(build: Build):
     # Add geode dependencies
     build.enable_mod_json_generation("mod.json.template")
     assert build.mod_json is not None # for type checkers
+
+    resources = build.mod_json.setdefault("resources", {})
+    spritesheets = resources.setdefault("spritesheets", {})
+    twemojis = spritesheets.setdefault("twemojis", [])
+    if "resources/emoji/*.png" not in twemojis:
+        twemojis.append("resources/emoji/*.png")
+
+    files = resources.setdefault("files", [])
+    if "resources/emotes_sfx/*.ogg" not in files:
+        files.append("resources/emotes_sfx/*.ogg")
 
     # allow any geode version, since we earlier verified that it's at least the required version
     if not gc.release:

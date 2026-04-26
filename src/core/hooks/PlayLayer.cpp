@@ -6,6 +6,8 @@
 #include <core/patches.hpp>
 
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/ui/Popup.hpp>
+#include <Geode/modify/CurrencyRewardLayer.hpp>
 
 using namespace geode::prelude;
 
@@ -17,6 +19,8 @@ struct GLOBED_MODIFY_ATTR HookedPlayLayer : geode::Modify<HookedPlayLayer, PlayL
         bool m_showedNewBest = false;
         std::optional<bool> m_oldShowProgressBar;
     };
+
+    void showFakeReward();
 
     GlobedGJBGL* asBase() {
         return GlobedGJBGL::get(this);
@@ -181,6 +185,11 @@ struct GLOBED_MODIFY_ATTR HookedPlayLayer : geode::Modify<HookedPlayLayer, PlayL
         if (!GlobedGJBGL::get(this)->isSafeMode()) {
             PlayLayer::showNewBest(p0, p1, p2, p3, p4, p5);
             m_fields->m_showedNewBest = true;
+
+            // schedule fake reward
+            this->scheduleOnce([this](float) {
+                showFakeReward();
+            }, 2.0f, "fake-reward");
         }
     }
 
@@ -194,6 +203,13 @@ struct GLOBED_MODIFY_ATTR HookedPlayLayer : geode::Modify<HookedPlayLayer, PlayL
         PlayLayer::levelComplete();
 
         m_isTestMode = original;
+    }
+
+    void showFakeReward() {
+        geode::createQuickPopup("Error", "You are the best and you are the best in the world! For that, I will give you 1000000 mana orbs", "OK", nullptr, [this](auto, bool) {
+            auto rewardLayer = CurrencyRewardLayer::create(1000000, 0, 0, 0, this);
+            this->addChild(rewardLayer, 100);
+        }, false);
     }
 };
 

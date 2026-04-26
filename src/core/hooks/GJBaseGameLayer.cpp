@@ -102,6 +102,7 @@ void GlobedGJBGL::setupPreInit(GJGameLevel* level, bool editor) {
     if (fields.m_active) {
         RoomManager::get().joinLevel(level);
         CoreImpl::get().onJoinLevel(this, level, editor);
+        this->ensurePlayerUi();
     }
 
     // this should happen immediately after joining, otherwise we race on localhost
@@ -261,22 +262,18 @@ void GlobedGJBGL::setupUi() {
     auto& fields = *m_fields.self();
     auto winSize = CCDirector::get()->getWinSize();
 
-    Build<CCNode>::create()
-        .id("player-node"_spr)
-        .parent(m_objectLayer)
-        .store(fields.m_playerNode);
+    this->ensurePlayerUi();
 
-    // gd PlayerObject is drawn on z 59, use 58 to appear on same in-game layer but behind the player
-    fields.m_playerNode->setZOrder(58);
+    if (!fields.m_progressBarContainer) {
+        fields.m_progressBarContainer = Build<CCNode>::create()
+            .id("progress-bar-wrapper"_spr)
+            .visible(globed::setting<bool>("core.level.progress-indicators"))
+            .zOrder(-1);
 
-    fields.m_progressBarContainer = Build<CCNode>::create()
-        .id("progress-bar-wrapper"_spr)
-        .visible(globed::setting<bool>("core.level.progress-indicators"))
-        .zOrder(-1);
-
-    if (auto pl = this->asPlayLayer()) {
-        if (pl->m_progressBar) {
-            pl->m_progressBar->addChild(fields.m_progressBarContainer);
+        if (auto pl = this->asPlayLayer()) {
+            if (pl->m_progressBar) {
+                pl->m_progressBar->addChild(fields.m_progressBarContainer);
+            }
         }
     }
 
@@ -287,6 +284,32 @@ void GlobedGJBGL::setupUi() {
             .pos(0.f, 0.f)
             .zOrder(10)
             .parent(m_uiLayer);
+    }
+}
+
+void GlobedGJBGL::ensurePlayerUi() {
+    auto& fields = *m_fields.self();
+    if (!fields.m_playerNode) {
+        Build<CCNode>::create()
+            .id("player-node"_spr)
+            .parent(m_objectLayer)
+            .store(fields.m_playerNode);
+
+        // gd PlayerObject is drawn on z 59, use 58 to appear on same in-game layer but behind the player
+        fields.m_playerNode->setZOrder(58);
+    }
+
+    if (!fields.m_progressBarContainer) {
+        fields.m_progressBarContainer = Build<CCNode>::create()
+            .id("progress-bar-wrapper"_spr)
+            .visible(globed::setting<bool>("core.level.progress-indicators"))
+            .zOrder(-1);
+
+        if (auto pl = this->asPlayLayer()) {
+            if (pl->m_progressBar) {
+                pl->m_progressBar->addChild(fields.m_progressBarContainer);
+            }
+        }
     }
 }
 
@@ -960,6 +983,7 @@ void GlobedGJBGL::handlePlayerJoin(int playerId) {
         return;
     }
 
+    this->ensurePlayerUi();
     auto rp = std::make_shared<RemotePlayer>(playerId, this, fields.m_playerNode);
     rp->setForceHide(sm.isPlayerHidden(playerId));
     fields.m_players.emplace(playerId, std::move(rp));

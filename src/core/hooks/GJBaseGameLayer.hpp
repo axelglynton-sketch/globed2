@@ -113,6 +113,8 @@ struct GLOBED_MODIFY_ATTR GlobedGJBGL : geode::Modify<GlobedGJBGL, GJBaseGameLay
     void setupUi();
     /// Setup message listeners
     void setupListeners();
+    /// Ensure the player node and progress bar container exist before processing incoming players.
+    void ensurePlayerUi();
     /// Setup keybinds
     void setupKeybinds();
 
